@@ -1,6 +1,7 @@
 module SExp (SExp(NumS, IdS, ListS), parseSExp, tokenize, Result(Ok, Err)) where
 
 import Token
+import Data.Maybe
 
 -- Converts a string into a list of tokens.
 tokenize :: String -> [Token]
@@ -8,7 +9,7 @@ tokenize str
     | isNothing(token) = []
     | otherwise = [fst(fromJust(parseToken str))] ++ tokenize(snd(fromJust(parseToken str)))
     where token = parseToken str
-    
+
 -- S-expression data definition.
 data SExp = NumS Integer -- numeric expression
           | IdS String -- identifier
