@@ -4,8 +4,11 @@ import Token
 
 -- Converts a string into a list of tokens.
 tokenize :: String -> [Token]
-tokenize str = error "implement me!"
-
+tokenize str
+    | isNothing(token) = []
+    | otherwise = [fst(fromJust(parseToken str))] ++ tokenize(snd(fromJust(parseToken str)))
+    where token = parseToken str
+    
 -- S-expression data definition.
 data SExp = NumS Integer -- numeric expression
           | IdS String -- identifier
