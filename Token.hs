@@ -1,4 +1,4 @@
-module Token (Brace, Token(Open, Close, NumTok, IdTok), parseToken) where
+module Token (Brace(Round, Square, Curly), Token(Open, Close, NumTok, IdTok), parseToken) where
 
 import Data.Char (isSpace, isDigit)
 
