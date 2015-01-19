@@ -62,7 +62,8 @@ validInterpExamples = [
   ("Single equal", "(= 2 3)", BoolE False),
   ("Single <", "(< 2 3)", BoolE True),
   ("non-trivial equal", "(if (= (* 2 3) (+ 5 1)) 7 10)", NumE 7),
-  ("non-trivial <", "(if (< (* 2 3) (+ 5 1)) 7 10)", NumE 10)  
+  ("non-trivial <", "    (if (< (* 2 3) (+ 15 1)) 7 10)", NumE 7),
+  ("nested non-trivial <", "    (if (< (* 5 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", NumE 10)    
   ]  
 
 checkValidParseExample (description, str, expected) =
@@ -93,7 +94,7 @@ interp expr =
             irhs = case interp(rhs) of 
               Ok(expr') -> case expr' of
                 NumE number -> number
-    IfE cond lhs rhs -> case interp(cond) of 
+    IfE cond cons alt -> case interp(cond) of 
                           Ok(expr') -> case expr' of
-                            BoolE bool | bool == True -> interp(lhs)
-                                       |  otherwise -> interp(rhs)
+                            BoolE bool | bool == True -> interp(cons)
+                                       | otherwise -> interp(alt)
