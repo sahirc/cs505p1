@@ -1,14 +1,13 @@
-module SExp (SExp(NumS, IdS, ListS), parseSExp, tokenize, Result(Ok, Err)) where
+module SExp (SExp(..), parseSExp, tokenize) where
 
+import Result
 import Token
-import Data.Maybe
 
 -- Converts a string into a list of tokens.
 tokenize :: String -> [Token]
-tokenize str
-    | isNothing(token) = []
-    | otherwise = [fst(fromJust(token))] ++ tokenize(snd(fromJust(token)))
-    where token = parseToken str
+tokenize str = case parseToken str of
+                Nothing -> []
+                Just (tok, str') -> tok:tokenize str'
 
 -- S-expression data definition.
 data SExp = NumS Integer -- numeric expression
@@ -22,43 +21,39 @@ instance Show SExp where
   show (IdS name) = name
   show (ListS sexps) = "(" ++ (unwords (map show sexps)) ++ ")"
 
-
--- Type for results of functions that can fail, such as parsing.
-data Result a = Ok a -- Success
-              | Err String -- Error with description
-              deriving (Eq, Show)
-
 -- Attempts to parse an S-expression from a list of tokens.
 -- If successful, returns:
 --    Ok (<parsed S-expression>, <remaining tokens>)
 -- If not, returns:
 --    Err <string describing problem encountered>
 parseSExp :: [Token] -> Result (SExp, [Token])
-parseSExp [] = Err "Can't parse an empty string"
-parseSExp all@(token:tokens) = 
-    case token of
-      NumTok t -> Ok(NumS(t), tokens)
-      IdTok t -> Ok(IdS(t), tokens)
-      Open t -> parseHelper t [] tokens
-      Close t -> Err "Close brackets should be handle as tokens, they should always be skipped"
+parseSExp [] = Err "SExp cannot be empty"
 
-parseHelper :: Brace -> [SExp] -> [Token] -> Result(SExp, [Token])
-parseHelper obrace accum tokens =
-  case tokens of 
-    [] -> Err "Shouldn't have an empty list"
-    Close cbrace:ts' | obrace == cbrace  -> Ok(ListS (reverse accum), ts')
-                     | otherwise -> Err "not a matching bracket"
-    _ -> case parseSExp(tokens) of
-          Ok(sexp, t') -> parseHelper obrace (sexp:accum) t'
-          Err _ -> Err "something went wrong"
-      
+parseSExp ((NumTok n):ts) = Ok (NumS n, ts)
+parseSExp ((IdTok id):ts) = Ok (IdS id, ts)
+parseSExp ((Close _):_) = Err "close without open"
+parseSExp ((Open brace):ts) =
+  case parseList brace [] ts of
+    Ok (sexps, ts') -> Ok (ListS sexps, ts')
+    Err msg -> Err msg
+
+parseList :: Brace -> [SExp] -> [Token] -> Result ([SExp], [Token])
+parseList br _ [] = Err ("Reached end before close " ++ (show br))
+parseList b sexps ((Close b'):ts)
+  | (b == b') = Ok (reverse sexps, ts)
+  | otherwise = Err "mismatched braces"
+parseList b sexps ts = case parseSExp ts of
+  Ok (sexp, ts') -> parseList b (sexp:sexps) ts'
+  Err msg -> Err msg
+
 -- Examples that should parse.
 validExamples = [
   ("empty list", "()", ListS []),
   ("single id", "true", IdS "true"),
   ("positive num", "1234", NumS 1234),
   ("negative num", "-1234", NumS (-1234)),
-  ("mixed list", "(foo () 4 (7 false))", ListS [IdS "foo", ListS [], NumS 4, ListS [NumS 7, IdS "false"]])
+  ("mixed list", "(foo () 4 (7 false))",
+   ListS [IdS "foo", ListS [], NumS 4, ListS [NumS 7, IdS "false"]])
   ]
 
 -- Examples that should not parse.
