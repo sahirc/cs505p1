@@ -24,13 +24,17 @@ data Expr = NumE Integer
 withStarListHelper :: [SExp] -> [(Var, Expr)] 	
 withStarListHelper [] = []			  
 withStarListHelper (v:vs) = case v of								
-								ListS list -> [(var, expr)] ++ withStarListHelper(vs)
-												where 
-													var = case (parseExpr(list !! 0)) of 
-														Ok(exp) -> case exp of
-															VarE var' -> var'
-													expr = case (parseExpr(list !! 1)) of
-														Ok(exp) -> exp														  
+							  ListS list -> [(var, expr)] ++ withStarListHelper(vs)
+						  	    where 
+								  var = case (parseExpr(list !! 0)) of 
+								    Ok(exp) -> case exp of
+									  VarE var' -> var'
+								  expr = case (parseExpr(list !! 1)) of
+									Ok(exp) -> exp	
+sexpToVar :: [SExp] -> [Var]
+sexpToVar [] = []
+sexpToVar (v:vs) = case v of IdS var -> [var] ++ sexpToVar(vs)													  
+
 parseExpr :: SExp -> Result Expr
 parseExpr sexp =
   case sexp of
@@ -49,7 +53,10 @@ parseExpr sexp =
                               then Ok(IfE tok1 tok2 tok3)
 							else if tok == "with*"
 							  then case (t !! 1) of 
-								ListS varExprs -> Ok(WithStarE (withStarListHelper(varExprs)) tok2)													
+								ListS varExprs -> Ok(WithStarE (withStarListHelper(varExprs)) tok2)
+							else if tok == "fun"
+							  then case (t !! 1) of
+							  	ListS varExprs -> Ok(FunE (sexpToVar(varExprs)) tok2)												
                             else
                               Err "Unknown SExp"
                             where tok1 = case (parseExpr (t !! 1)) of
