@@ -35,36 +35,34 @@ sexpToVar :: [SExp] -> [Var]
 sexpToVar [] = []
 sexpToVar (v:vs) = case v of IdS var -> [var] ++ sexpToVar(vs)													  
 
+parseAppE :: [SExp] -> [Expr]
+parseAppE [] = []
+parseAppE (s:ss) = case (parseExpr s) of Ok(x) -> [x] ++ parseAppE(ss)											  
+
 parseExpr :: SExp -> Result Expr
 parseExpr sexp =
   case sexp of
     NumS i -> Ok(NumE i)
     IdS s -> Ok(VarE s)
     ListS t -> case (head (t)) of
-                IdS tok -> if tok == "+"
-                              then Ok(AppE [VarE "+", tok1, tok2])
-                            else if tok == "*"
-                              then Ok(AppE [VarE "*", tok1, tok2])
-                            else if tok == "="
-                              then Ok(AppE [VarE "=", tok1, tok2])
-                            else if tok == "<"
-                              then Ok(AppE [VarE "<", tok1, tok2])
-                            else if tok == "if"
+                IdS tok ->  if tok == "if"
                               then Ok(IfE tok1 tok2 tok3)
 							else if tok == "with*"
 							  then case (t !! 1) of 
 								ListS varExprs -> Ok(WithStarE (withStarListHelper(varExprs)) tok2)
+								_ -> Err "First element of with wasn't a list of bindings"
 							else if tok == "fun"
 							  then case (t !! 1) of
-							  	ListS varExprs -> Ok(FunE (sexpToVar(varExprs)) tok2)												
+							  	ListS varExprs -> Ok(FunE (sexpToVar(varExprs)) tok2)
+							  	_ -> Err "First element of fun wasn't a list of vars"												
                             else
-                              Err "Unknown SExp"
+                              Ok(AppE (parseAppE t)) 
                             where tok1 = case (parseExpr (t !! 1)) of
                                            Ok(exp) -> exp
                                   tok2 = case (parseExpr (t !! 2)) of
                                            Ok(exp) -> exp
                                   tok3 = case (parseExpr (t !! 3)) of
-                                           Ok(exp) -> exp
+                                           Ok(exp) -> exp       
 -- Core language (desugared from Expr).
 -- <e> ::= <number>
 --       | (if <e> <e> <e>)
