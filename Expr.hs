@@ -27,7 +27,7 @@ withStarListHelper (v:vs) = case v of
 							  ListS list -> [(var, expr)] ++ withStarListHelper(vs)
 						  	    where 
 								  var = case (parseExpr(list !! 0)) of 
-								    Ok(exp) -> case exp of
+								    Ok(exp) -> case exp of 
 									  VarE var' -> var'
 								  expr = case (parseExpr(list !! 1)) of
 									Ok(exp) -> exp	
@@ -79,7 +79,35 @@ data CExpr = NumC Integer
            deriving (Eq, Show)
  
 desugar :: Expr -> Result CExpr
-desugar expr = Err "desugar not implemented yet"
+desugar expr = 
+  case expr of 
+  	NumE i -> Ok(NumC i)
+  	AppE [a,b] -> Ok(AppC x y)
+  				  	where
+  					  x = (case (desugar(a)) of Ok(x') -> x'::CExpr)::CExpr
+  					  y = (case (desugar(b)) of Ok(x') -> x'::CExpr)::CExpr
+  	AppE (a:b:exprs) -> desugar(AppE ((AppE [a,b]) : exprs))
+
+  	IfE cond cons alt -> Ok(IfC (cond') (cons') (alt'))
+  						   where cond' = case (desugar(cond)) of Ok(x) -> x
+  						     	 cons' = case (desugar(cons)) of Ok(x) -> x
+  						     	 alt'  = case (desugar(alt))  of Ok(x) -> x
+
+  	VarE v -> Ok(VarC v)
+  	FunE (v:vs) expr -> Ok(FunC v (parseFun (vs) (expr)))
+  	WithStarE [] expr -> desugar(expr)
+  	WithStarE a@(bg:bgs) expr -> Ok(AppC (FunC (fst(bg)) cbg) rbg)
+  							     where rbg = case (desugar(snd(bg))) of Ok(x) -> x
+  							           cbg = case (desugar( WithStarE bgs expr )) of Ok(x) -> x
+
+parseFun :: [Var] -> Expr -> CExpr
+parseFun vars@(v:vs) exprs = if (length(vars) == 1) 
+							   then (FunC v e)
+							 else if (length(vars) >= 2)
+							  	then FunC v (parseFun (vs) (exprs))
+							 else
+							  	error "ERROR"
+							 where e = case desugar(exprs) of Ok(cexpr) -> cexpr 
 
 checkIds :: [String] -> [String] -> CExpr -> Result ()
 checkIds bound reserved expr = 

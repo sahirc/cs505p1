@@ -1,100 +1,55 @@
-module Interp where
+module InterpFun where
 
-import SExp
+import Expr
+import Result
 
--- Operations to support.
--- Concrete syntax:
--- <op> ::= + | * | = | <
-data BinOp = Add | Mult | Equal | Lt deriving (Eq, Show)
+-- Values resulting from interpreting an expression.
+data Val = NumV Integer
+         | BoolV Bool
+         | FunV Var CExpr Env
+         | PrimV String (Val -> Result Val)  -- name and implementation
 
--- Expressions.
--- Concrete syntax:
--- <e> ::= <number>
---       | true
---       | false
---       | (<op> <e> <e>)
---       | (if <e> <e> <e>)
-data Expr = NumE Integer
-          | BoolE Bool
-          | BinOpE BinOp Expr Expr
-          | IfE Expr Expr Expr
-          deriving (Eq, Show)
+type Env = [(Var, Val)]
 
-parseExpr :: SExp -> Result Expr
-parseExpr sexp =
-  case sexp of
-    NumS i -> Ok(NumE i)
-    IdS s -> if s == "true"
-               then Ok(BoolE True)
-             else 
-               Ok(BoolE False)       
-    ListS t -> case (head (t)) of
-                 IdS tok -> if tok == "+"
-                              then Ok(BinOpE Add tok1 tok2)
-                            else if tok == "*"
-                              then Ok(BinOpE Mult tok1 tok2)
-                            else if tok == "="
-                              then Ok(BinOpE Equal tok1 tok2)
-                            else if tok == "<"
-                              then Ok(BinOpE Lt tok1 tok2)
-                            else if tok == "if"
-                              then Ok(IfE tok1 tok2 tok3)
-                            else 
-                              Err "Unknown SExp"                              
-                            where tok1 = case (parseExpr (t !! 1)) of
-                                           Ok(exp) -> exp 
-                                  tok2 = case (parseExpr (t !! 2)) of
-                                           Ok(exp) -> exp 
-                                  tok3 = case (parseExpr (t !! 3)) of
-                                           Ok(exp) -> exp 
+instance Show Val where
+  show (NumV n) = show n
+  show (BoolV b) = show b
+  show (FunV var body env) = "(fun (" ++ var ++ ") " ++ (show body) ++ " | " ++
+                             (show env) ++ ")"
+  show (PrimV name impl) = "<primitive: " ++ name ++ ">"
 
+wrapBinaryArithOp :: String -> (Integer -> Integer -> Val) -> Val
+wrapBinaryArithOp name op =
+  PrimV name (
+    \arg1 -> return (PrimV ("partial:" ++ name)
+                     (\arg2 ->
+                       case (arg1, arg2) of
+                        (NumV lv, NumV rv) -> return (op lv rv)
+                        nonNum -> fail ("numeric op applied to: " ++
+                                        (show nonNum)))))
 
-validParseExamples = [
-  ("non-trivial example", "(if (= (* 2 3) (+ 5 1)) 7 10)",
-   IfE (BinOpE Equal (BinOpE Mult (NumE 2) (NumE 3))
-        (BinOpE Add (NumE 5) (NumE 1))) (NumE 7) (NumE 10))
-  -- Feel free to add your own examples ...
-  ]
+-- Populate initialEnv ...
+initialEnv :: Env
+initialEnv = [ ("+", (wrapBinaryArithOp "add" add)),
+               ("*", wrapBinaryArithOp "mult" mult),
+               ("=", wrapBinaryArithOp "equals" equals),
+               ("<", wrapBinaryArithOp "lessThan" lessThan)
+             ]
 
-validInterpExamples = [
-  ("Single Mult", "(* 2 3)", NumE 6),
-  ("Single Add", "(+ 2 3)", NumE 5),
-  ("Single equal", "(= 2 3)", BoolE False),
-  ("Single <", "(< 2 3)", BoolE True),
-  ("non-trivial equal", "(if (= (* 2 3) (+ 5 1)) 7 10)", NumE 7),
-  ("non-trivial <", "    (if (< (* 2 3) (+ 15 1)) 7 10)", NumE 7),
-  ("nested non-trivial <", "    (if (< (* 5 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", NumE 10)    
-  ]  
+add :: Integer -> Integer -> Val
+add l r = NumV (l + r)
 
-checkValidParseExample (description, str, expected) =
-  (description,
-   case parseSExp (tokenize str) of
-    Ok (sexp, []) -> parseExpr sexp == Ok expected
-    _ -> False)
+mult :: Integer -> Integer -> Val
+mult l r = NumV (l * r)
 
-checkValidInterpExample (description, str, expected) =
-  (description,
-   case parseSExp (tokenize str) of
-    Ok (sexp, []) -> case (parseExpr(sexp)) of
-      Ok(expr) -> interp (expr) == Ok expected
-    _ -> False)  
+equals :: Integer -> Integer -> Val
+equals l r = BoolV (l == r)
 
-interp :: Expr -> Result Expr
-interp expr = 
-  case expr of
-    NumE number -> Ok(NumE number) 
-    BoolE bool -> Ok(BoolE bool)
-    BinOpE op lhs rhs | op == Add -> Ok(NumE (ilhs + irhs))
-                      | op == Mult -> Ok(NumE (ilhs * irhs))
-                      | op == Equal -> Ok(BoolE (ilhs == irhs))
-                      | op == Lt -> Ok(BoolE (ilhs < irhs))
-      where ilhs = case interp(lhs) of 
-              Ok(expr') -> case expr' of
-                NumE number -> number
-            irhs = case interp(rhs) of 
-              Ok(expr') -> case expr' of
-                NumE number -> number
-    IfE cond cons alt -> case interp(cond) of 
-                          Ok(expr') -> case expr' of
-                            BoolE bool | bool == True -> interp(cons)
-                                       | otherwise -> interp(alt)
+lessThan :: Integer -> Integer -> Val
+lessThan l r = BoolV (l < r)
+
+interp :: CExpr -> Env -> Result Val
+interp expr env = error "a"{-case expr of 
+                      AppC c1 c2 -> case interp(c1) of
+                                        FunV v c3 env' -> interp c3 [v,interp(c2)]:env'
+                                        PrimV name f -> f (interp(c2))-}
