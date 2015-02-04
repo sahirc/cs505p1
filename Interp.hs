@@ -2,6 +2,7 @@ module InterpFun where
 
 import Expr
 import Result
+import SExp
 
 -- Values resulting from interpreting an expression.
 data Val = NumV Integer
@@ -30,10 +31,12 @@ wrapBinaryArithOp name op =
 
 -- Populate initialEnv ...
 initialEnv :: Env
-initialEnv = [ ("+", (wrapBinaryArithOp "add" add)),
+initialEnv = [ ("+", wrapBinaryArithOp "add" add),
                ("*", wrapBinaryArithOp "mult" mult),
                ("=", wrapBinaryArithOp "equals" equals),
-               ("<", wrapBinaryArithOp "lessThan" lessThan)
+               ("<", wrapBinaryArithOp "lessThan" lessThan),
+               ("true", BoolV True),
+               ("false", BoolV False)
              ]
 
 add :: Integer -> Integer -> Val
@@ -49,7 +52,17 @@ lessThan :: Integer -> Integer -> Val
 lessThan l r = BoolV (l < r)
 
 interp :: CExpr -> Env -> Result Val
-interp expr env = error "a"{-case expr of 
-                      AppC c1 c2 -> case interp(c1) of
-                                        FunV v c3 env' -> interp c3 [v,interp(c2)]:env'
-                                        PrimV name f -> f (interp(c2))-}
+interp expr env = case expr of 
+                    NumC i -> Ok(NumV i)
+                    VarC v -> case lookup v env of  
+                                Nothing -> Err "unbound var"
+                                Just(v) -> Ok(v) 
+                    IfC cond cons alt -> case (interp cond env) of 
+                                            Ok(BoolV True) -> (interp cons env)
+                                            Ok(BoolV False) -> (interp alt env)
+                    FunC var cexpr -> Ok(FunV var cexpr env)
+                    AppC c1 c2 -> case (interp c1 env) of
+                                    Ok(FunV v c3 env') -> interp c3 {-[v,c2i] ++ -}env'
+                                    Ok(PrimV name f) -> f (c2i)
+                                    where c2i = case interp c2 env of 
+                                                  Ok(x) -> x
