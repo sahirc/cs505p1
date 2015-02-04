@@ -8,9 +8,12 @@ import SExp
 data Val = NumV Integer
          | BoolV Bool
          | FunV Var CExpr Env
-         | PrimV String (Val -> Result Val)  -- name and implementation
+         | PrimV String (Val -> Result Val) -- name and implementation
 
 type Env = [(Var, Val)]
+
+instance Eq Val where
+  NumV a == NumV b = a == b
 
 instance Show Val where
   show (NumV n) = show n
@@ -55,14 +58,34 @@ interp :: CExpr -> Env -> Result Val
 interp expr env = case expr of 
                     NumC i -> Ok(NumV i)
                     VarC v -> case lookup v env of  
-                                Nothing -> Err "unbound var"
+                                Nothing -> Err (show(v) ++ " is an unbound var")
                                 Just(v) -> Ok(v) 
-                    IfC cond cons alt -> case (interp cond env) of 
-                                            Ok(BoolV True) -> (interp cons env)
-                                            Ok(BoolV False) -> (interp alt env)
+                    IfC cond cons alt -> case interp cond env of 
+                                           Ok(BoolV True) -> interp cons env
+                                           Ok(BoolV False) -> interp alt env
+                                           Err(x) -> Err x
                     FunC var cexpr -> Ok(FunV var cexpr env)
                     AppC c1 c2 -> case (interp c1 env) of
-                                    Ok(FunV v c3 env') -> interp c3 {-[v,c2i] ++ -}env'
-                                    Ok(PrimV name f) -> f (c2i)
-                                    where c2i = case interp c2 env of 
-                                                  Ok(x) -> x
+                                    Ok(FunV v c3 env') -> case interp c2 env of 
+                                      Ok(x) -> interp c3 ([(v,x)] ++ env')
+                                      Err(x) -> Err(x)
+                                    Ok(PrimV name f) -> case interp c2 env of 
+                                      Ok(x) -> f (x)
+                                      Err(x) -> Err(x)
+                                    Err(x) -> Err x
+interpTestCases = [
+  ("with from hw", initialEnv, "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", Ok(NumV 21)),
+  ("if", initialEnv, "(if (< (* 5 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", Ok(NumV 10)),
+  ("unbound var", initialEnv, "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ z y))", Err "some error")
+  ]     
+
+testInterp (description, env, str, expected) =
+  (description,
+   case parseSExp (tokenize str) of
+    Ok (sexp, []) -> case parseExpr sexp of
+      Ok(expr) -> case desugar expr of 
+        Ok(dexpr) -> case interp dexpr env of
+          Ok(val) -> Ok(val) == expected
+          Err(_) -> Err("some error") == expected
+
+  )
