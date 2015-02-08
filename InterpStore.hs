@@ -34,9 +34,9 @@ initialEnv = [ ("+", wrapBinaryArithOp "add" add),
                ("<", wrapBinaryArithOp "lessThan" lessThan),
                ("true", BoolV True),
                ("false", BoolV False),
-               ("box", box'),
-               ("set-box!", setbox'),
-               ("unbox", unbox fetch)
+               ("box", box),
+               ("set-box!", setbox),
+               ("unbox", unbox)
              ]
 
 -- Values resulting from interpreting an expression.
@@ -46,11 +46,20 @@ data Val = NumV Integer
          | PrimV String (Val -> STR Val)
          | BoxV Loc
 
-box' :: Val
-box' = PrimV "box'" (\val -> alloc val >>= (\loc -> return(BoxV(loc))))
+box :: Val
+box = PrimV "box'" (\val -> alloc val >>= (\loc -> return(BoxV(loc))))
 
-unbox :: (Loc -> STR Val) -> Val
-unbox fetch = PrimV "unbox" (\val -> case val of BoxV loc -> fetch loc) -- handle !box
+unbox :: Val
+unbox = PrimV "unbox" (\val -> case val of 
+                                    BoxV loc -> fetch loc
+                                    nonBox -> fail("non box" ++ show(nonBox)))
+
+setbox :: Val
+setbox = PrimV "setbox" (\arg1 -> return (PrimV "something"
+                            (\arg2 -> case arg1 of 
+                                BoxV loc -> update loc arg2 >>= (\_ -> return (arg2)))
+                            )
+                        )
 
 alloc :: Val -> STR Loc
 alloc val = STR (\store -> ( Ok (fst (store)), 
@@ -58,10 +67,6 @@ alloc val = STR (\store -> ( Ok (fst (store)),
                                ) 
                           )
                 )
-
-setbox' :: Val
-setbox' = PrimV "setbox" (\arg1 -> return (PrimV "something"
-                            (\arg2 -> case arg1 of BoxV loc -> update loc arg2 >>= (\_ -> return (arg2)))))
 
 fetch :: Loc -> STR Val
 fetch loc = STR (\arg1 -> case lookup loc (snd arg1) of
@@ -73,13 +78,6 @@ update :: Loc -> Val -> STR ()
 update loc val = STR (\arg1 -> case lookup loc (snd arg1) of
                             Nothing -> (Err("Cannot update that which does not exist " ++ show(loc)), arg1)
                             Just val' -> (Ok (), (fst(arg1), (loc, val):(snd arg1) )))
-
-copy :: (Loc, Val) -> [(Loc, Val)] -> [(Loc, Val)]
-copy new [] = []
-copy new (old:olds) = if(fst(old) == fst(new)) then
-                          (fst(new), snd(new)) : copy new olds
-                        else
-                          (fst(old), snd(old)) : copy new olds
 
 add :: Integer -> Integer -> Val
 add l r = NumV (l + r)
@@ -99,15 +97,13 @@ instance Functor STR where
 instance Monad STR where
   -- (>>=) :: STR a -> (a -> STR b) -> STR b
   (STR st) >>= f = STR (\store -> case st store of 
-                                      (result, store) -> case result of 
-                                        Err(msg) -> (Err(msg), store)
-                                        Ok(a) -> case f (a) of
-                                          STR b -> b store
-                                      )
+                                    (Ok result, store') -> case f (result) of 
+                                      STR b -> b store' 
+                                    (Err msg, store) -> (Err(msg), store)
+                       )
 
   -- return :: a -> STR a
-  return v = STR (\store -> (Ok(v), store))
-
+  return v = STR (\s -> (Ok v, s))
   fail msg = STR (\s -> (Err msg, s))
 
 instance Applicative STR where
@@ -131,16 +127,17 @@ interp expr env = case expr of
                     VarC v -> case lookup v env of  
                                 Nothing -> fail (show(v) ++ " is an unbound var")
                                 Just(v) -> return v 
-                    IfC cond cons alt ->  interp cond env >>= (\cond ->
-                                            case cond of 
+                    IfC cond cons alt ->  interp cond env >>= (\condVal ->
+                                            case condVal of 
                                               BoolV True -> interp cons env
                                               BoolV False -> interp alt env
-                                              x -> return x
+                                              nonBool -> fail ("Need a BoolV, received a " ++ show(nonBool))
                                           )
                     FunC var cexpr -> return (FunV var cexpr env)
                     AppC c1 c2 -> interp c1 env >>= (\f1 ->
                                     case f1 of
                                       (FunV v c3 env') -> interp c2 env >>= (\f2 -> interp c3 ((v,f2) : env'))  
                                       (PrimV name f) -> interp c2 env >>= f
+                                      nonFun -> fail ("Need a PrimV for a FunV, received a " ++ show(nonFun))
                                       )
                                   
