@@ -21,23 +21,30 @@ data Expr = NumE Integer
           | WithStarE [(Var, Expr)] Expr
           deriving (Eq, Show)
 		  
-sexpToVarExpr :: [SExp] -> [(Var, Expr)] 	
-sexpToVarExpr [] = []			  
-sexpToVarExpr (v:vs) = case v of								
-							  ListS list -> [(var, expr)] ++ sexpToVarExpr(vs)
-						  	    where 
-								  var = case (parseExpr(list !! 0)) of 
-								    Ok(exp) -> case exp of 
-									  VarE var' -> var'
-								  expr = case (parseExpr(list !! 1)) of
-									Ok(exp) -> exp	
-sexpToVar :: [SExp] -> [Var]
-sexpToVar [] = []
-sexpToVar (v:vs) = case v of IdS var -> [var] ++ sexpToVar(vs)													  
+sexpToVarExpr :: [SExp] -> Result [(Var, Expr)] 	
+sexpToVarExpr [] = return []			  
+sexpToVarExpr (v:vs) = case v of ListS (a:b:_) -> parseExpr a >>= (\a' -> 
+														parseExpr b >>= (\b' ->
+															sexpToVarExpr vs >>= (\vs' ->
+																case a' of 
+																	VarE var -> return ((var, b') : vs')
+																	nonVar -> fail ("I was expcting a var " ++ show(nonVar))
+																)))
+															
 
-sexpToExpr :: [SExp] -> [Expr]
-sexpToExpr [] = []
-sexpToExpr (s:ss) = case (parseExpr s) of Ok(x) -> [x] ++ sexpToExpr(ss)											  
+sexpToVar :: [SExp] -> Result [Var]
+sexpToVar [] = Ok []
+sexpToVar (v:vs) = case v of 
+					IdS var -> sexpToVar vs >>= (\vs' -> return (var : vs'))
+					nonId -> fail ("I was expcting a var " ++ show(nonId))
+
+sexpToExpr :: [SExp] -> Result [Expr]
+sexpToExpr [] = Ok []
+sexpToExpr (s:ss) = parseExpr s >>= (\s' -> 
+						sexpToExpr ss >>= (\ss' -> 
+							return (s' : ss') 
+					    )
+					)
 
 parseExpr :: SExp -> Result Expr
 parseExpr (NumS i) = return (NumE i)
@@ -47,12 +54,16 @@ parseExpr (ListS [IdS "if", cond, cons, alt]) = parseExpr cond >>= (\cond' ->
 											  	    parseExpr alt >>= (\alt' ->
 											  	      return (IfE cond' cons' alt'))))
 
-parseExpr (ListS [IdS "with*", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> 
-														   return (WithStarE (sexpToVarExpr varExprs) expr))
-parseExpr (ListS [IdS "fun", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> 
-													     return (FunE (sexpToVar varExprs) expr))
+parseExpr (ListS [IdS "with*", ListS [], _]) =  fail "with* format not met"
+parseExpr (ListS [IdS "with*", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> sexpToVarExpr varExprs >>= (\v' -> return (WithStarE v' expr)))
+
+parseExpr (ListS [IdS "fun", ListS [], _]) =  fail "first element of fun wasn't a list of vars"
+parseExpr (ListS [IdS "fun", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> sexpToVar varExprs >>= (\v' -> return (FunE v' expr)))
+
 parseExpr (ListS [ListS s]) = parseExpr (ListS s)
-parseExpr (ListS list) = return(AppE (sexpToExpr list))
+parseExpr (ListS list) = sexpToExpr list >>= (\list' -> return (AppE list'))
+
+parseExpr _ = fail "unrecognized expression"
 
 -- Core language (desugar'ed from Expr).
 -- <e> ::= <number>
@@ -71,7 +82,7 @@ boundVars = ["+","*","<","=","if","true","false", "box", "set-box!", "unbox"]
 reservedVars = ["if","true","false"]
 
 desugar :: Expr -> Result CExpr
-desugar expr = desugar' expr >>= (\cexpr -> checkIds boundVars reservedVars cexpr >>= (\_ -> return cexpr))
+desugar expr = desugar' expr--desugar' expr >>= (\cexpr -> checkIds boundVars reservedVars cexpr >>= (\_ -> return cexpr))
 
 desugar' :: Expr -> Result CExpr
 -- Vars are just vars
@@ -97,54 +108,43 @@ desugar'  (FunE [v] expr) = desugar' expr >>= (\dexpr -> return (FunC v dexpr))
 -- Multi-param functions must be curried  							
 desugar' (FunE (v:vs) expr) = parseFun vs expr >>= (\remFun -> return (FunC v remFun))
 
-desugar' (WithStarE (bg:bgs) expr) = desugar' (snd bg) >>= (\rbg -> 
+desugar' (WithStarE ((firstVarName, firstFunBinding):bgs) expr) = desugar' firstFunBinding >>= (\rbg -> 
 									  desugar' (WithStarE bgs expr) >>= (\cbg -> 
-									  	return (AppC (FunC (fst(bg)) cbg) rbg)))
+									  	return (AppC (FunC firstVarName cbg) rbg)))
+
+desugar' _ = fail "unrecognized expression"
+
 
 parseFun :: [Var] -> Expr -> Result CExpr
-parseFun vars@(v:vs) exprs = if (length(vars) == 1) 
-							   then Ok(FunC v e)
-							 else if (length(vars) >= 2)
-							  	then case parseFun vs exprs of
-							  		Ok(remFun) -> Ok(FunC v remFun)
-							  		Err(msg) -> Err(msg)
-							 else
-							  	Err "functions must have parameters"
-							 where e = case desugar (exprs) of 
-							 	Ok(cexpr) -> cexpr 
-							 	Err(msg) -> error (show(msg))
-							 	
+parseFun ([]) exprs = fail "functions must have parameter"
+parseFun (v:[]) exprs = desugar exprs >>= (\e -> return (FunC v e))
+parseFun (v:vs) exprs = parseFun vs exprs >>= (\remFun -> return (FunC v remFun))
 
 checkIds :: [String] -> [String] -> CExpr -> Result ()
 checkIds bound reserved expr = case expr of 
-							     AppC c1 c2 -> case checkIds bound reserved c1 of
-								 			     Ok(_) -> case checkIds bound reserved c2 of 
-								 			     	Ok(_) -> Ok()
-								 			     	Err(x) -> Err(x)
-								 			     Err(x) -> Err(x)
+							     AppC c1 c2 -> checkIds bound reserved c1 >>= (\c1' -> 
+								 			     checkIds bound reserved c2 >>= (\_ -> return ()))
 							     VarC v -> if (v `elem` reserved) 
-							                 then Err(show(v) ++ "is a reserved var in " ++ show(reserved))
+							                 then fail(show(v) ++ " is a reserved var in " ++ show(reserved))
 						  				   else if (v `elem` bound)
-						  				     then
-						  				       Ok()
+						  				     then return () 
 						  			       else  
-									         Err(show(v) ++ "is unbound var in " ++ show(bound))
-							     FunC v c -> checkIds (v:bound) reserved c
-							     IfC cond cons alt -> case checkIds bound reserved cond of
-							     						Ok(_) -> case checkIds bound reserved cons of
-							     							Ok(_) -> case checkIds bound reserved alt of
-							     							  Ok(_) -> Ok()
-							     							  Err(x) -> Err(x)
-							     							Err(x) -> Err(x)
-							     						Err(x) -> Err(x)
-							     NumC _ -> Ok()
+									         fail(show(v) ++ " is an unbound var in " ++ show(bound))
+							     FunC v c -> checkIds (v:bound) reserved (VarC v) >>= (\_ -> checkIds (v:bound) reserved c)
+							     IfC cond cons alt -> checkIds bound reserved cond >>= (\cond' ->
+							     						checkIds bound reserved cons >>= (\cons' ->
+							     						  checkIds bound reserved alt >>= (\alt' ->
+							     						  	return ()
+							     						  ))) 
+							     NumC _ -> return ()
 
 checkIdTestCases = [
-  ("multiple bindings", "+":"*":[], "if":"true":[], "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", Ok()),
-  ("unbound z", "+":"*":[], "if":"true":[], "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ z y))", Err("some error")),
-  ("bound reserved word if", "+":"*":[], "if":"true":[], "(with* ([if (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", Err("some error")),
-  ("bound reserved word in if ", "+":"*":[], "if":"true":[], "(if (< (* x 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", Err("some error")),
-  ("unbound in body",  "+":"*":[], "if":"true":[], "(fun (x) (+ 2 y))", Err("some error"))	
+  ("something", "+":"*":[], "if":"true":[], "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", "pass"), 
+  ("multiple bindings", "+":"*":[], "if":"true":[], "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", "pass"),
+  ("unbound z", "+":"*":[], "if":"true":[], "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ z y))", "unbound"),
+  ("bound reserved word if", "+":"*":[], "if":"true":[], "(with* ([if (+ 1 2)] [y (* 2 3)] [x (+ y 3)]) (+ x y))", "reserved"),
+  ("bound reserved word in if ", "+":"*":[], "if":"true":[], "(if (< (* 2 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", "unbound"),
+  ("unbound in body",  "+":"*":[], "if":"true":[], "(fun (x) (+ 2 y))", "unbound")
   ]  		
 
 testCheckId (description, bound, reserved, str, expected) =
@@ -153,7 +153,7 @@ testCheckId (description, bound, reserved, str, expected) =
     Ok (sexp, []) -> case parseExpr sexp of
       Ok(expr) -> case desugar expr of 
         Ok(dexpr) -> case checkIds bound reserved dexpr of
-        	Ok(_) -> expected == Ok()
-        	Err(_) -> expected == Err("some error")
+        	Ok(x) -> expected == "pass"
+        	Err(x) -> isInfixOf expected x == True
 
   )			     							  

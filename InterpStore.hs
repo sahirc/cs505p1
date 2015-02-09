@@ -128,7 +128,7 @@ interp :: CExpr -> Env -> STR Val
 interp expr env = case expr of 
                     NumC i -> return (NumV i)
                     VarC v -> case lookup v env of  
-                                Nothing -> fail (show(v) ++ " is an unbound var")
+                                Nothing -> fail (show(v) ++ " is an unbound var in " ++ show(env))
                                 Just(v) -> return v 
                     IfC cond cons alt ->  interp cond env >>= (\condVal ->
                                             case condVal of 
