@@ -57,15 +57,13 @@ parseExpr (ListS [IdS "if", cond, cons, alt]) = parseExpr cond >>= (\cond' ->
 parseExpr (ListS [IdS "with*", ListS [], _]) =  fail "with* format not met"
 parseExpr (ListS [IdS "with*", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> sexpToVarExpr varExprs >>= (\v' -> return (WithStarE v' expr)))
 
-parseExpr (ListS [IdS "fun", ListS [], _]) =  fail "first element of fun wasn't a list of vars"
-parseExpr (ListS [IdS "fun", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> sexpToVar varExprs >>= (\v' -> return (FunE v' expr)))
+parseExpr (ListS [IdS "fun", ListS [], _]) =  fail "functions must have parameters"
+parseExpr (ListS [IdS "fun", ListS varExprs, sexp]) = parseExpr sexp >>= (\expr -> sexpToVar varExprs >>= (\v' -> return (FunE v' expr)))
 
 parseExpr (ListS [ListS s]) = parseExpr (ListS s)
 parseExpr (ListS list) = sexpToExpr list >>= (\list' -> return (AppE list'))
 
-parseExpr _ = fail "unrecognized expression"
-
--- Core language (desugar'ed from Expr).
+-- Core language (desugared from Expr).
 -- <e> ::= <number>
 --       | (if <e> <e> <e>)
 --       | x
@@ -82,43 +80,34 @@ boundVars = ["+","*","<","=","if","true","false", "box", "set-box!", "unbox"]
 reservedVars = ["if","true","false"]
 
 desugar :: Expr -> Result CExpr
-desugar expr = desugar' expr--desugar' expr >>= (\cexpr -> checkIds boundVars reservedVars cexpr >>= (\_ -> return cexpr))
-
-desugar' :: Expr -> Result CExpr
 -- Vars are just vars
-desugar' (VarE v) = return(VarC v)
+desugar (VarE v) = return(VarC v)
 -- Ints are just ints
-desugar' (NumE i) = return(NumC i)
--- If nothing is bound, all you can do is desugar' the expr
-desugar' (WithStarE [] expr) = desugar' expr
+desugar (NumE i) = return(NumC i)
+-- If nothing is bound, all you can do is desugar the expr
+desugar (WithStarE [] expr) = desugar expr
+desugar (WithStarE ((firstVarName, firstBinding):bgs) expr) = desugar firstBinding >>= (\rbg -> 
+									  desugar (WithStarE bgs expr) >>= (\cbg -> 
+									  	return (AppC (FunC firstVarName cbg) rbg)))
 -- Simplest AppE case to convert to AppC
-desugar' (AppE [a,b]) = desugar' a >>= (\a' -> desugar' b >>= (\b' -> return (AppC a' b')))
-
+desugar (AppE [a,b]) = desugar a >>= (\a' -> desugar b >>= (\b' -> return (AppC a' b')))
 -- Break down nested AppEs into the simplest case mentioned above  					  		
-desugar' (AppE (a:b:exprs)) = desugar' (AppE ((AppE [a,b]) : exprs))  					  		
-desugar' (IfE cond cons alt) = desugar' cond >>= (\cond' ->
-								desugar' cons >>= (\cons' ->
-								  desugar' alt >>= (\alt' -> 
+
+desugar (AppE (a:b:exprs)) = desugar (AppE ((AppE [a,b]) : exprs))  					  		
+desugar (IfE cond cons alt) = desugar cond >>= (\cond' ->
+								desugar cons >>= (\cons' ->
+								  desugar alt >>= (\alt' -> 
 								  	return (IfC cond' cons' alt') 
 								  )
 								)
 							  )
+desugar (FunE [] expr) = fail "functions must have at least one parameter"
 -- If the fun has a single param, no need to curry																
-desugar'  (FunE [v] expr) = desugar' expr >>= (\dexpr -> return (FunC v dexpr))
+desugar  (FunE [v] expr) = desugar expr >>= (\dexpr -> return (FunC v dexpr))
 -- Multi-param functions must be curried  							
-desugar' (FunE (v:vs) expr) = parseFun vs expr >>= (\remFun -> return (FunC v remFun))
+desugar (FunE (v:vs) expr) = desugar (FunE [v] (FunE vs expr))
 
-desugar' (WithStarE ((firstVarName, firstFunBinding):bgs) expr) = desugar' firstFunBinding >>= (\rbg -> 
-									  desugar' (WithStarE bgs expr) >>= (\cbg -> 
-									  	return (AppC (FunC firstVarName cbg) rbg)))
-
-desugar' _ = fail "unrecognized expression"
-
-
-parseFun :: [Var] -> Expr -> Result CExpr
-parseFun ([]) exprs = fail "functions must have parameter"
-parseFun (v:[]) exprs = desugar exprs >>= (\e -> return (FunC v e))
-parseFun (v:vs) exprs = parseFun vs exprs >>= (\remFun -> return (FunC v remFun))
+desugar _ = fail "unrecognized expression"
 
 checkIds :: [String] -> [String] -> CExpr -> Result ()
 checkIds bound reserved expr = case expr of 
