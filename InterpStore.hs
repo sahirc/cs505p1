@@ -121,6 +121,9 @@ instance Show Val where
   show (PrimV name impl) = "<primitive: " ++ name ++ ">"
   show (BoxV loc) = "<box@" ++ (show loc) ++ ">"
 
+runSTR :: Store -> STR a -> (Result a, Store)
+runSTR s (STR st) = st s
+
 interp :: CExpr -> Env -> STR Val
 interp expr env = case expr of 
                     NumC i -> return (NumV i)

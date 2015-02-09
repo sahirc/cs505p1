@@ -40,31 +40,21 @@ sexpToExpr [] = []
 sexpToExpr (s:ss) = case (parseExpr s) of Ok(x) -> [x] ++ sexpToExpr(ss)											  
 
 parseExpr :: SExp -> Result Expr
-parseExpr sexp =
-  case sexp of
-    NumS i -> Ok(NumE i)
-    IdS s -> Ok(VarE s)
-    ListS t -> case (head (t)) of
-                IdS tok -> if tok == "if"
-                              then Ok(IfE tok1 tok2 tok3)
-							else if tok == "with*"
-							  then case (t !! 1) of 
-								ListS varExprs -> Ok(WithStarE (sexpToVarExpr(varExprs)) tok2)
-								_ -> Err "First element of with wasn't a list of bindings"
-							else if tok == "fun"
-							  then case (t !! 1) of
-							  	ListS varExprs -> Ok(FunE (sexpToVar(varExprs)) tok2)
-							  	_ -> Err "First element of fun wasn't a list of vars"												
-                            else
-                              Ok(AppE (sexpToExpr t)) 
-                            where tok1 = case (parseExpr (t !! 1)) of
-                                           Ok(exp) -> exp
-                                  tok2 = case (parseExpr (t !! 2)) of
-                                           Ok(exp) -> exp
-                                  tok3 = case (parseExpr (t !! 3)) of
-                                           Ok(exp) -> exp       
-                ListS s -> parseExpr (ListS s)
--- Core language (desugared from Expr).
+parseExpr (NumS i) = return (NumE i)
+parseExpr (IdS i) = return (VarE i)
+parseExpr (ListS [IdS "if", cond, cons, alt]) = parseExpr cond >>= (\cond' ->
+											      parseExpr cons >>= (\cons' ->
+											  	    parseExpr alt >>= (\alt' ->
+											  	      return (IfE cond' cons' alt'))))
+
+parseExpr (ListS [IdS "with*", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> 
+														   return (WithStarE (sexpToVarExpr varExprs) expr))
+parseExpr (ListS [IdS "fun", ListS varExprs, sexp]) =  parseExpr sexp >>= (\expr -> 
+													     return (FunE (sexpToVar varExprs) expr))
+parseExpr (ListS [ListS s]) = parseExpr (ListS s)
+parseExpr (ListS list) = return(AppE (sexpToExpr list))
+
+-- Core language (desugar'ed from Expr).
 -- <e> ::= <number>
 --       | (if <e> <e> <e>)
 --       | x
@@ -77,48 +67,50 @@ data CExpr = NumC Integer
            | AppC CExpr CExpr
            deriving (Eq, Show)
  
-desugar :: Expr -> Result CExpr
--- Vars are just vars
-desugar (VarE v) = Ok(VarC v)
--- Ints are just ints
-desugar (NumE i) = Ok(NumC i)
--- If nothing is bound, all you can do is desugar the expr
-desugar (WithStarE [] expr) = desugar(expr)
--- Simplest AppE case to convert to AppC
-desugar (AppE [a,b]) = case desugar a of 
-						Ok(a') -> case desugar b of
-							Ok(b') -> Ok(AppC a' b')
-							Err(x) -> Err(x)
-						Err(x) -> Err(x)
--- Break down nested AppEs into the simplest case mentioned above  					  		
-desugar (AppE (a:b:exprs)) = desugar(AppE ((AppE [a,b]) : exprs))  					  		
-desugar (IfE cond cons alt) = case desugar cond of
-								Ok(cond') -> case desugar cons of 
-									Ok(cons') -> case desugar alt of 
-										Ok(alt') -> Ok(IfC cond' cons' alt')
-										Err(x) -> Err(x)
-									Err(x) -> Err(x)
-								Err(x) -> Err(x)
--- If the fun has a single param, no need to curry																
-desugar  (FunE [v] expr) = case desugar expr of 
-  							Ok(dexpr) -> Ok(FunC v dexpr)
-  							Err(x) -> Err(x)	
--- Multi-param functions must be curried  							
-desugar (FunE (v:vs) expr) = Ok(FunC v (parseFun vs expr))
-desugar (WithStarE (bg:bgs) expr) = case desugar(snd bg) of
-  								      Ok(rbg) -> case desugar (WithStarE bgs expr) of
-  								   	    Ok(cbg) -> Ok(AppC (FunC (fst(bg)) cbg) rbg)
-  								   	    Err(x) -> Err(x)
-  								      Err(x) -> Err(x)  							     
+boundVars = ["+","*","<","=","if","true","false", "box", "set-box!", "unbox"]
+reservedVars = ["if","true","false"]
 
-parseFun :: [Var] -> Expr -> CExpr
+desugar :: Expr -> Result CExpr
+desugar expr = desugar' expr >>= (\cexpr -> checkIds boundVars reservedVars cexpr >>= (\_ -> return cexpr))
+
+desugar' :: Expr -> Result CExpr
+-- Vars are just vars
+desugar' (VarE v) = return(VarC v)
+-- Ints are just ints
+desugar' (NumE i) = return(NumC i)
+-- If nothing is bound, all you can do is desugar' the expr
+desugar' (WithStarE [] expr) = desugar' expr
+-- Simplest AppE case to convert to AppC
+desugar' (AppE [a,b]) = desugar' a >>= (\a' -> desugar' b >>= (\b' -> return (AppC a' b')))
+
+-- Break down nested AppEs into the simplest case mentioned above  					  		
+desugar' (AppE (a:b:exprs)) = desugar' (AppE ((AppE [a,b]) : exprs))  					  		
+desugar' (IfE cond cons alt) = desugar' cond >>= (\cond' ->
+								desugar' cons >>= (\cons' ->
+								  desugar' alt >>= (\alt' -> 
+								  	return (IfC cond' cons' alt') 
+								  )
+								)
+							  )
+-- If the fun has a single param, no need to curry																
+desugar'  (FunE [v] expr) = desugar' expr >>= (\dexpr -> return (FunC v dexpr))
+-- Multi-param functions must be curried  							
+desugar' (FunE (v:vs) expr) = parseFun vs expr >>= (\remFun -> return (FunC v remFun))
+
+desugar' (WithStarE (bg:bgs) expr) = desugar' (snd bg) >>= (\rbg -> 
+									  desugar' (WithStarE bgs expr) >>= (\cbg -> 
+									  	return (AppC (FunC (fst(bg)) cbg) rbg)))
+
+parseFun :: [Var] -> Expr -> Result CExpr
 parseFun vars@(v:vs) exprs = if (length(vars) == 1) 
-							   then (FunC v e)
+							   then Ok(FunC v e)
 							 else if (length(vars) >= 2)
-							  	then FunC v (parseFun vs exprs)
+							  	then case parseFun vs exprs of
+							  		Ok(remFun) -> Ok(FunC v remFun)
+							  		Err(msg) -> Err(msg)
 							 else
-							  	error "ERROR"
-							 where e = case desugar(exprs) of 
+							  	Err "functions must have parameters"
+							 where e = case desugar (exprs) of 
 							 	Ok(cexpr) -> cexpr 
 							 	Err(msg) -> error (show(msg))
 							 	

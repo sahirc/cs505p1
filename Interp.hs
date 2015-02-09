@@ -56,23 +56,21 @@ lessThan l r = BoolV (l < r)
 
 interp :: CExpr -> Env -> Result Val
 interp expr env = case expr of 
-                    NumC i -> Ok(NumV i)
+                    NumC i -> return(NumV i)
                     VarC v -> case lookup v env of  
                                 Nothing -> Err (show(v) ++ " is an unbound var")
                                 Just(v) -> Ok(v) 
-                    IfC cond cons alt -> case interp cond env of 
-                                           Ok(BoolV True) -> interp cons env
-                                           Ok(BoolV False) -> interp alt env
-                                           Err(x) -> Err x
-                    FunC var cexpr -> Ok(FunV var cexpr env)
-                    AppC c1 c2 -> case (interp c1 env) of
-                                    Ok(FunV v c3 env') -> case interp c2 env of 
-                                      Ok(x) -> interp c3 ([(v,x)] ++ env')
-                                      Err(x) -> Err(x)
-                                    Ok(PrimV name f) -> case interp c2 env of 
-                                      Ok(x) -> f (x)
-                                      Err(x) -> Err(x)
-                                    Err(x) -> Err x
+                    IfC cond cons alt -> interp cond env >>= (\cond' -> case cond' of 
+                                           BoolV True -> interp cons env
+                                           BoolV False -> interp alt env
+                                           nonBool -> fail ("not a bool bro " ++ show(nonBool))
+                                         )
+                    FunC var cexpr -> return(FunV var cexpr env)
+                    AppC c1 c2 -> interp c1 env >>= (\fun -> case fun of
+                                    FunV v c3 env' -> interp c2 env >>= (\c2' -> interp c3 ([(v,c2')] ++ env'))
+                                    PrimV name f -> interp c2 env >>= f
+                                    nonFun -> fail "not a fun or app"
+                                  )
 interpTestCases = [
   ("with from hw", initialEnv, "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", Ok(NumV 21)),
   ("if", initialEnv, "(if (< (* 5 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", Ok(NumV 10)),
@@ -87,5 +85,6 @@ testInterp (description, env, str, expected) =
         Ok(dexpr) -> case interp dexpr env of
           Ok(val) -> Ok(val) == expected
           Err(_) -> Err("some error") == expected
+        Err(_) -> Err("some error") == expected
 
   )
