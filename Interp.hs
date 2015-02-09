@@ -56,21 +56,23 @@ lessThan l r = BoolV (l < r)
 
 interp :: CExpr -> Env -> Result Val
 interp expr env = case expr of 
-                    NumC i -> return(NumV i)
+                    NumC i -> return (NumV i)
                     VarC v -> case lookup v env of  
-                                Nothing -> Err (show(v) ++ " is an unbound var")
-                                Just(v) -> Ok(v) 
-                    IfC cond cons alt -> interp cond env >>= (\cond' -> case cond' of 
-                                           BoolV True -> interp cons env
-                                           BoolV False -> interp alt env
-                                           nonBool -> fail ("not a bool bro " ++ show(nonBool))
-                                         )
-                    FunC var cexpr -> return(FunV var cexpr env)
-                    AppC c1 c2 -> interp c1 env >>= (\fun -> case fun of
-                                    FunV v c3 env' -> interp c2 env >>= (\c2' -> interp c3 ([(v,c2')] ++ env'))
-                                    PrimV name f -> interp c2 env >>= f
-                                    nonFun -> fail "not a fun or app"
-                                  )
+                                Nothing -> fail (show(v) ++ " is an unbound var")
+                                Just(v) -> return v 
+                    IfC cond cons alt ->  interp cond env >>= (\condVal ->
+                                            case condVal of 
+                                              BoolV True -> interp cons env
+                                              BoolV False -> interp alt env
+                                              nonBool -> fail ("Need a BoolV, received a " ++ show(nonBool))
+                                          )
+                    FunC var cexpr -> return (FunV var cexpr env)
+                    AppC c1 c2 -> interp c1 env >>= (\f1 ->
+                                    case f1 of
+                                      (FunV v c3 env') -> interp c2 env >>= (\f2 -> interp c3 ((v,f2) : env'))  
+                                      (PrimV name f) -> interp c2 env >>= f
+                                      nonFun -> fail ("Need a PrimV for a FunV, received a " ++ show(nonFun))
+                                      )
 interpTestCases = [
   ("with from hw", initialEnv, "(with* ([x (+ 1 2)] [y (* x x)] [x (+ y 3)]) (+ x y))", Ok(NumV 21)),
   ("if", initialEnv, "(if (< (* 5 3) (+ (+ 5 1) (+ 5 1) )) 7 10)", Ok(NumV 10)),
