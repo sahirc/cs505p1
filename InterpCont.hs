@@ -55,7 +55,10 @@ unimplemented name = PrimV name (\v k -> Err (name ++ ": unimplemented"))
 
 cons = unimplemented "cons"
 consP = unimplemented "cons?"
-emptyP = unimplemented "empty?"
+emptyP = PrimV "empty?" (\list k -> case list of 
+                            EmptyV -> callK k (BoolV True)
+                            _      -> callK k (BoolV False)
+                        ) 
 first = unimplemented "first" 
 rest = unimplemented "rest" 
 
@@ -105,7 +108,9 @@ callK k val =
       BoolV False -> interp alt env k
       nonBool -> Err ("`if` expected bool, got: " ++ (show nonBool))
    AppFunK arg env k -> interp arg env (AppArgK val k)
-   AppArgK arg' k ->  apply arg' val k{-case arg' of 
+   AppArgK arg' k ->  apply arg' val k
+
+                      {-case arg' of 
                        FunV var body env' -> interp body ((var, val):env') k
                        PrimV name f -> f val k-}
 
@@ -122,4 +127,4 @@ parseCheckAndInterpStr str =
 apply :: Val -> Val -> Cont -> Result Val
 apply (FunV var cexpr env) val k = interp cexpr ((var, val):env) k
 apply (PrimV name f) arg k = f arg k
-apply _ _ _ = error "Not a FunV or PrimV"
+apply _ _ _ = fail "Not a FunV or PrimV"
