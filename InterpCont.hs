@@ -53,18 +53,43 @@ less = wrapBinaryArithOp "<" (\x y -> (BoolV (x < y)))
 
 unimplemented name = PrimV name (\v k -> Err (name ++ ": unimplemented"))
 
-cons = unimplemented "cons"
-consP = unimplemented "cons?"
 emptyP = PrimV "empty?" (\list k -> case list of 
                             EmptyV -> callK k (BoolV True)
                             _      -> callK k (BoolV False)
                         ) 
-first = unimplemented "first" 
-rest = unimplemented "rest" 
 
-pair = unimplemented "pair" 
-pairFst = unimplemented "fst" 
-pairSnd = unimplemented "snd" 
+consP = PrimV "cons?" (\list k -> case list of 
+                            ConsV a b  -> callK k (BoolV True)
+                            _          -> callK k (BoolV False)
+                      ) 
+
+cons = PrimV "cons" (\l k -> callK k (PrimV ("partial:" ++ "cons") 
+                                        (\r k -> case r of
+                                                   ConsV _ _ -> callK k (ConsV l r)
+                                                   EmptyV -> callK k (ConsV l r)
+                                                   _ -> handleError k (StringV "Can't cons onto a nonList")
+                                        )
+                                      )
+                    )
+
+first = PrimV "first" (\list k -> case list of
+                                    ConsV l r -> callK k l
+                                    _ -> handleError k (StringV "Can't first a nonList"))
+
+rest = PrimV "rest" (\list k -> case list of
+                                    ConsV l r -> callK k r
+                                    _ -> handleError k (StringV "Can't first a nonList"))
+
+pair = PrimV "pair" (\l k -> callK k (PrimV ("partial:" ++ "cons") 
+                                        (\r k -> callK k (PairV l r)
+                                        )))
+pairFst = PrimV "fst" (\p k -> case p of 
+                                  PairV l _ -> callK k l
+                                  _ -> handleError k (StringV "Can get snd of a nonPair"))
+                                        
+pairSnd = PrimV "snd" (\p k -> case p of 
+                                  PairV _ r -> callK k r
+                                  _ -> handleError k (StringV "Can get snd of a nonPair"))
 
 raise = unimplemented "raise" 
 callWithHandler = unimplemented "call-with-handler"
