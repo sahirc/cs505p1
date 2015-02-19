@@ -91,7 +91,7 @@ pairSnd = PrimV "snd" (\p k -> case p of
                                   PairV _ r -> callK k r
                                   _ -> handleError k (StringV "Can get snd of a nonPair"))
 
-raise = unimplemented "raise" 
+raise = PrimV "raise" (\arg k -> handleError k arg)
 callWithHandler = unimplemented "call-with-handler"
 callWithContext = unimplemented "call-with-context"
 getContext = unimplemented "get-context"
