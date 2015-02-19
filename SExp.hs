@@ -12,6 +12,7 @@ tokenize str = case parseToken str of
 -- S-expression data definition.
 data SExp = NumS Integer -- numeric expression
           | IdS String -- identifier
+          | StringS String -- string
           | ListS [SExp] -- list of S-expressions
           deriving Eq
 
@@ -19,6 +20,7 @@ data SExp = NumS Integer -- numeric expression
 instance Show SExp where
   show (NumS n) = show n
   show (IdS name) = name
+  show (StringS name) = (show name)
   show (ListS sexps) = "(" ++ (unwords (map show sexps)) ++ ")"
 
 -- Attempts to parse an S-expression from a list of tokens.
@@ -31,6 +33,7 @@ parseSExp [] = Err "SExp cannot be empty"
 
 parseSExp ((NumTok n):ts) = Ok (NumS n, ts)
 parseSExp ((IdTok id):ts) = Ok (IdS id, ts)
+parseSExp ((StringTok s):ts) = Ok (StringS s, ts)
 parseSExp ((Close _):_) = Err "close without open"
 parseSExp ((Open brace):ts) =
   case parseList brace [] ts of

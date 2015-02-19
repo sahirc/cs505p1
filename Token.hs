@@ -1,5 +1,4 @@
-module Token (Brace(Round, Square, Curly), Token(Open, Close, NumTok, IdTok),
-              parseToken) where
+module Token (Brace(..), Token(..), parseToken) where
 
 import Data.Char (isSpace, isDigit, digitToInt)
 
@@ -14,11 +13,12 @@ data Token = Open Brace -- An open brace (of the given shape).
            | Close Brace -- A closing brace (of the given shape).
            | NumTok Integer -- A numeric literal.
            | IdTok String -- An identifier.
+           | StringTok String  -- A string.
            deriving (Eq, Show)
 
--- Tries to parse a token from a string.
--- If the string contains only whitespace and comments, returns Nothing.
--- Otherwise, returns Just (<token>, <remaining characters>).
+-- Tries to parse a token from a string.  If the string contains only whitespace
+-- and comments or an unterminated string literal, returns Nothing.  Otherwise,
+-- returns Just (<token>, <remaining characters>).
 parseToken :: String -> Maybe (Token, String)
 parseToken "" = Nothing
 parseToken s@(c:cs) =
@@ -29,6 +29,7 @@ parseToken s@(c:cs) =
    ']' -> Just (Close Square, cs)
    '{' -> Just (Open Curly, cs)
    '}' -> Just (Close Curly, cs)
+   '"' -> parseStringHelper "" cs
    -- Dash is special because it could start a number or an identifier, or be an
    -- identifier by itself.
    '-' -> case cs of
@@ -74,3 +75,11 @@ parseNumber accum "" = (accum, "")
 parseNumber accum s@(c:cs)
   | isDigit c = parseNumber (accum * 10 + (toInteger (digitToInt c))) cs
   | otherwise = (accum, s)
+
+-- Parses a string.
+parseStringHelper :: String -> String -> Maybe (Token, String)
+parseStringHelper soFar "" = Nothing
+parseStringHelper soFar ('"':cs) = Just (StringTok (reverse soFar), cs)
+parseStringHelper soFar ('\\':'\\':cs) = parseStringHelper ('\\':soFar) cs
+parseStringHelper soFar ('\\':'"':cs) = parseStringHelper ('"':soFar) cs
+parseStringHelper soFar (c:cs) = parseStringHelper (c:soFar) cs
