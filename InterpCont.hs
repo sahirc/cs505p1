@@ -37,10 +37,9 @@ data Cont = DoneK
 
 handleError :: Cont -> Val -> Result Val
 handleError k val = case k of
-                      DoneK -> fail (show val) 
-                      AppArgK _ b  -> case b of
-                                  AppArgK arg cont -> apply arg val k
+                      AppArgK a b  -> case b of
                                   CustomK handler cont -> apply handler val cont
+                                  _ -> Err (show val)
 
 wrapBinaryArithOp :: String -> (Integer -> Integer -> Val) -> Val
 wrapBinaryArithOp name op =
@@ -112,9 +111,11 @@ getContext = PrimV "get-context" (\key k -> callK k (getContextHelper k))
 getContextHelper :: Cont -> Val
 getContextHelper cont = case cont of
                           DoneK -> EmptyV
-                          ContextK val k' -> ConsV val (getContextHelper k')
-                          AppArgK v c -> getContextHelper c
-                          AppFunK _ _ k -> getContextHelper k
+                          ContextK val k -> ConsV val (getContextHelper k)
+                          AppArgK v k    -> getContextHelper k
+                          AppFunK _ _ k  -> getContextHelper k
+                          IfK _ _ _ k    -> getContextHelper k
+                          CustomK _ k    -> getContextHelper k
 
 
 callCc = PrimV "call/cc" (\fun currentK -> apply fun 
