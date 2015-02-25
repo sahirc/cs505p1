@@ -36,7 +36,8 @@ data Cont = DoneK
           deriving Show
 
 handleError :: Cont -> Val -> Result Val
-handleError k val = case k of 
+handleError k val = case k of
+                      DoneK -> fail (show val) 
                       AppArgK _ b  -> case b of
                                   AppArgK arg cont -> apply arg val k
                                   CustomK handler cont -> apply handler val cont
@@ -116,7 +117,9 @@ getContextHelper cont = case cont of
                           AppFunK _ _ k -> getContextHelper k
 
 
-callCc = unimplemented "call/cc"
+callCc = PrimV "call/cc" (\fun currentK -> apply fun 
+                           (PrimV "currentK" 
+                              (\v _ -> callK currentK v)) currentK)
 
 bind prim@(PrimV name fn) = (name, prim)
 bind nonPrim = error ("cannot bind " ++ (show nonPrim))
