@@ -32,12 +32,14 @@ data Cont = DoneK
           | AppFunK CExpr Env Cont
           | AppArgK Val Cont
           | CustomK Val Cont
+          | ContextK Val Cont
           deriving Show
 
 handleError :: Cont -> Val -> Result Val
 handleError k val = case k of 
-                      AppArgK _ b  -> case b of 
-                                        CustomK handler cont -> apply handler val cont
+                      AppArgK _ b  -> case b of
+                                  AppArgK arg cont -> apply arg val k
+                                  CustomK handler cont -> apply handler val cont
 
 wrapBinaryArithOp :: String -> (Integer -> Integer -> Val) -> Val
 wrapBinaryArithOp name op =
@@ -81,14 +83,14 @@ first = PrimV "first" (\list k -> case list of
 
 rest = PrimV "rest" (\list k -> case list of
                                     ConsV l r -> callK k r
-                                    _ -> handleError k (StringV "Can't first a nonList"))
+                                    _ -> handleError k (StringV "Can't rest a nonList"))
 
 pair = PrimV "pair" (\l k -> callK k (PrimV ("partial:" ++ "cons") 
                                         (\r k -> callK k (PairV l r)
                                         )))
 pairFst = PrimV "fst" (\p k -> case p of 
                                   PairV l _ -> callK k l
-                                  _ -> handleError k (StringV "Can't get snd of a nonPair"))
+                                  _ -> handleError k (StringV "Can't get fst of a nonPair"))
                                         
 pairSnd = PrimV "snd" (\p k -> case p of 
                                   PairV _ r -> callK k r
@@ -99,11 +101,21 @@ raise = PrimV "raise" (\arg k -> handleError k arg)
 callWithHandler = PrimV "call-with-handler" (\thunk k -> callK k (PrimV "handler" (
                                               \handler k -> apply thunk EmptyV (
                                                 (CustomK handler k)))))
-                                                              
+                                                            
+callWithContext = PrimV "call-with-context" (\ctx k -> 
+                                              callK k (
+                                                PrimV "thunk" (\thunk k -> apply thunk EmptyV (ContextK ctx k))))
+
+getContext = PrimV "get-context" (\key k -> callK k (getContextHelper k))
+                             
+getContextHelper :: Cont -> Val
+getContextHelper cont = case cont of
+                          DoneK -> EmptyV
+                          ContextK val k' -> ConsV val (getContextHelper k')
+                          AppArgK v c -> getContextHelper c
+                          AppFunK _ _ k -> getContextHelper k
 
 
-callWithContext = unimplemented "call-with-context"
-getContext = unimplemented "get-context"
 callCc = unimplemented "call/cc"
 
 bind prim@(PrimV name fn) = (name, prim)
@@ -144,6 +156,7 @@ callK k val =
    AppFunK arg env k -> interp arg env (AppArgK val k)
    AppArgK arg k ->  apply arg val k
    CustomK _ cont -> callK cont val
+   ContextK _ cont -> callK cont val
 
 parseCheckAndInterpStr :: String -> Result Val
 parseCheckAndInterpStr str =
