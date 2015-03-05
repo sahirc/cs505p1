@@ -31,7 +31,14 @@ freeTypeVars ty bound = case ty of
 
 -- Problem 3.
 alphaRename :: TVar -> TVar -> Type -> Type
-alphaRename vIn vOut ty = ty -- implement me!
+alphaRename vIn vOut (VarT t) | t == vIn = VarT vOut
+                              | otherwise = VarT vIn
+alphaRename vIn vOut (ForAllT t ty) | t == vIn = ForAllT vOut (alphaRename vIn vOut ty)
+                                    | otherwise = ForAllT vIn (alphaRename vIn vOut ty)
+alphaRename vIn vOut (PairT l r) = PairT (alphaRename vIn vOut l) (alphaRename vIn vOut r)
+alphaRename vIn vOut (ListT t) = ListT (alphaRename vIn vOut t)                                            
+alphaRename vIn vOut (ArrowT l r) = ArrowT (alphaRename vIn vOut l) (alphaRename vIn vOut r)
+alphaRename vIn vOut ty = ty
 
 -- Implementation complete: nothing to do here. Use this helper in checkType.
 checkClosed :: Type -> [TVar] -> Result ()
