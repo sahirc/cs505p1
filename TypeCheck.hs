@@ -47,21 +47,17 @@ checkClosed ty bound =
    [] -> Ok ()
    nonEmpty -> Err ("unbound type var(s) in " ++ (show ty) ++ ": " ++ (show nonEmpty))
 
+
 -- Problem 4.
 subst :: TVar -> Type -> Type -> Type
 subst var forType (VarT var') | var' == var = forType
 subst var forType (ArrowT l r) = ArrowT (subst var forType l) (subst var forType r)
 subst var forType (PairT l r) = PairT (subst var forType l) (subst var forType r)
 subst var forType (ListT t) = ListT (subst var forType t)
-subst var forType (ForAllT t ty) = if elem t (allTypeVars forType) -- if we would end up capturing, then alpha-rename
-                                    then 
-                                       ForAllT newVar (subst var forType (alphaRename t newVar (ForAllT t ty)))
-                                    else if t == var -- if we would end up shadowing, then don't substitute
-                                      then 
-                                        ForAllT t ty
-                                    else -- all good, subst in the body of the ForAllT
-                                      ForAllT t (subst var forType ty)
-                                    where newVar = genFreshVar (allTypeVars forType)
+subst var forType (ForAllT t ty) | t `elem` (allTypeVars forType) = ForAllT newVar (subst var forType (alphaRename t newVar ty))
+                                 | t == var = ForAllT t ty
+                                 | otherwise = ForAllT t (subst var forType ty)
+                                   where newVar = genFreshVar (allTypeVars forType)
 
 subst var forType NumT = NumT
 subst var forType StringT = StringT
