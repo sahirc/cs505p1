@@ -1,6 +1,6 @@
 module Token (Brace(..), Token(..), parseToken) where
 
-import Data.Char (isSpace, isDigit, digitToInt)
+import Data.Char (isAlpha, isDigit, isSpace, digitToInt)
 
 -- Sorts of braces we allow in expressions.
 data Brace = Round -- ()
@@ -29,6 +29,9 @@ parseToken s@(c:cs) =
    ']' -> Just (Close Square, cs)
    '{' -> Just (Open Curly, cs)
    '}' -> Just (Close Curly, cs)
+   '<' -> Just (IdTok "<", cs)
+   ',' -> Just (IdTok ",", cs)
+   '.' -> Just (IdTok ".", cs)
    '"' -> parseStringHelper "" cs
    -- Dash is special because it could start a number or an identifier, or be an
    -- identifier by itself.
@@ -60,12 +63,13 @@ skipComment (c:cs) = (case c of
                          _ -> skipComment) cs
 
 -- Characters that force termination of an identifier.
-idTerminators = " \t\n()[]{};"
+idTerminators = " \t\n()[]{};,."
 
 -- Parses an identifier, where accum contains the characters we've accumulated
 -- so far, in reverse.
 parseIdHelper :: String -> String -> (Token, String)
 parseIdHelper accum "" = (IdTok (reverse accum), "")
+parseIdHelper accum@(b:bs) s@('>':cs) | isAlpha b || isDigit b = (IdTok (reverse accum), s)
 parseIdHelper accum s@(c:cs) | elem c idTerminators = (IdTok (reverse accum), s)
                              | otherwise = parseIdHelper (c:accum) cs
 

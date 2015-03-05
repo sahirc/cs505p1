@@ -40,6 +40,8 @@ handleError k val = case k of
                       AppArgK a b  -> case b of
                                   CustomK handler cont -> apply handler val cont
                                   _ -> Err (show val)
+                      AppFunK a b c -> fail (show a)
+                      CustomK handler cont -> apply handler val cont
 
 wrapBinaryArithOp :: String -> (Integer -> Integer -> Val) -> Val
 wrapBinaryArithOp name op =
@@ -175,5 +177,4 @@ parseCheckAndInterpStr str =
 apply :: Val -> Val -> Cont -> Result Val
 apply (FunV var cexpr env) val k = interp cexpr ((var, val):env) k
 apply (PrimV name f) arg k = f arg k
-
 apply _ _ _ = fail "Not a FunV or PrimV"
