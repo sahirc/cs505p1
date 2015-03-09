@@ -17,17 +17,13 @@ merge (x:xs) ys = x:merge ys xs
 
 -- Problem 2.
 freeTypeVars :: Type -> [TVar] -> [TVar]
-freeTypeVars ty bound = case ty of 
-                          ForAllT tvar ty' -> freeTypeVars ty' (tvar:bound)
-                          ListT t1 -> freeTypeVars t1 bound
-                          ArrowT t1 t2 -> merge (freeTypeVars t1 bound)  (freeTypeVars t2 bound)
-                          PairT t1 t2 -> merge (freeTypeVars t1 bound)  (freeTypeVars t2 bound)
-                          VarT tvar -> if elem tvar bound
-                                         then
-                                           []   
-                                         else
-                                           [tvar]
-                          _ -> []
+freeTypeVars (VarT v) bound | v `elem` bound = []
+                            | otherwise = [v]
+freeTypeVars (ForAllT v ty)     bound = freeTypeVars ty (v:bound)
+freeTypeVars (ArrowT t1 t2)     bound = merge (freeTypeVars t1 bound)  (freeTypeVars t2 bound)
+freeTypeVars (PairT t1 t2)      bound = merge (freeTypeVars t1 bound)  (freeTypeVars t2 bound)
+freeTypeVars (ListT t)          bound = freeTypeVars t bound
+freeTypeVars t bound = []
 
 -- Problem 3.
 alphaRename :: TVar -> TVar -> Type -> Type
@@ -35,8 +31,8 @@ alphaRename vIn vOut (VarT t) | t == vIn = VarT vOut
                               | otherwise = VarT t
 alphaRename vIn vOut (ForAllT t ty) | t == vIn = ForAllT vOut (alphaRename vIn vOut ty)
                                     | otherwise = ForAllT vIn (alphaRename vIn vOut ty)
-alphaRename vIn vOut (PairT l r) = PairT (alphaRename vIn vOut l) (alphaRename vIn vOut r)
-alphaRename vIn vOut (ListT t) = ListT (alphaRename vIn vOut t)                                            
+alphaRename vIn vOut (PairT l r)  = PairT (alphaRename vIn vOut l) (alphaRename vIn vOut r)
+alphaRename vIn vOut (ListT t)    = ListT (alphaRename vIn vOut t)                                            
 alphaRename vIn vOut (ArrowT l r) = ArrowT (alphaRename vIn vOut l) (alphaRename vIn vOut r)
 alphaRename vIn vOut ty = ty
 
@@ -57,17 +53,32 @@ subst var forType (ListT t) = ListT (subst var forType t)
 subst var forType (ForAllT t ty) | t `elem` (allTypeVars forType) = ForAllT newVar (subst var forType (alphaRename t newVar ty))
                                  | t == var = ForAllT t ty
                                  | otherwise = ForAllT t (subst var forType ty)
-                                   where newVar = genFreshVar (allTypeVars forType)
-
-subst var forType NumT = NumT
-subst var forType StringT = StringT
-subst var forType BoolT = BoolT
-subst var forType inType = inType -- implement me!
+                                   where newVar = genFreshVar (allTypeVars forType) -- TODO: are we passing in the right argument list
+-- NumT, StringT, BoolT
+subst var forType inType = inType
 
 -- Problem 5.
 checkType :: DExpr -> TyContext -> Result Type
+checkType (VarD v) (bt, pt) = case lookup v pt of
+                                Just t -> return t
+                                _ -> fail ("can't do it" ++ v)
+checkType (FunD v t dexpr) (bt, pt) = checkType dexpr (v:bt, (v, t):pt) >>= (\dexpr' -> Ok(ArrowT t dexpr'))
+checkType (NumD _) _ = Ok NumT
+checkType (AppD d1 d2) gamma = checkType d1 gamma >>= (\tyd1 -> 
+                                 case tyd1 of
+                                   ArrowT t1 t2 -> 
+                                    checkType d2 gamma >>= (\tyd2 -> 
+                                      if doTypesMatch t1 tyd2
+                                        then return t2
+                                        else fail "types' dont match" 
+                                    )
+                                )
 checkType expr gamma = Err "implement me!"
 
+
+doTypesMatch :: Type -> Type -> Bool
+doTypesMatch  t1 t2 | t1 == t2 = True
+                    | otherwise = False
 -- Implementation complete.
 -- Generates a variable name that's distinct from every name in the argument list.
 -- Use this helper for alpha-renaming in subst.

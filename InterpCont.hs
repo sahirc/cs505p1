@@ -164,15 +164,6 @@ callK k val =
    CustomK _ cont -> callK cont val
    ContextK _ cont -> callK cont val
 
-parseCheckAndInterpStr :: String -> Result Val
-parseCheckAndInterpStr str =
-  let toks = tokenize str
-      initialIds = map fst initialEnv in
-  do (sexp, _) <- parseSExp toks
-     expr <- parseExpr sexp
-     cexp <- desugar expr
-     checkIds initialIds (["fun", "if", "with*"] ++ initialIds) cexp
-     interp cexp initialEnv DoneK
 
 apply :: Val -> Val -> Cont -> Result Val
 apply (FunV var cexpr env) val k = interp cexpr ((var, val):env) k

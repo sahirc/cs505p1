@@ -1,4 +1,4 @@
-module Expr (Var, Expr(..), CExpr(..), DExpr(..), Type(..), TVar, parseExpr, desugar) where
+module Expr (Var, Expr(..), CExpr(..), DExpr(..), Type(..), TVar, parseExpr, desugar, erase) where
 
 import Data.List
 import Result
@@ -29,9 +29,30 @@ data Type = NumT
 -- Problem 1.
 alphaEquiv :: Type -> Type -> [(TVar, TVar)] -> Bool
 
--- simplest case
-alphaEquiv (VarT t1) (VarT t2) [] = t1 == t2
-alphaEquiv type1 type2 typeVariableMap = False -- implement me!
+-- Free type variables are compared for simple equality.
+alphaEquiv (VarT t1) (VarT t2) bound  | elem (t1, t2) bound = True
+                                      | otherwise = if t1 == t2 
+                                                      then 
+                                                        not(isBound t1 bound)
+                                                      else
+                                                        False
+
+alphaEquiv (ForAllT v1 t1) (ForAllT v2 t2) bound = alphaEquiv t1 t2 ((v1, v2):bound)
+alphaEquiv (ArrowT t1 t2)  (ArrowT t3 t4)  bound = alphaEquiv t1 t3 bound && alphaEquiv t2 t4 bound
+alphaEquiv (PairT t1 t2)   (PairT t3 t4)   bound = alphaEquiv t1 t3 bound && alphaEquiv t2 t4 bound
+alphaEquiv (ListT t1)      (ListT t2)      bound = alphaEquiv t1 t2 bound
+
+
+alphaEquiv NumT NumT _ = True
+alphaEquiv BoolT BoolT _ = True
+alphaEquiv StringT StringT _ = True
+alphaEquiv _ _ _ = False
+
+
+isBound :: TVar -> [(TVar, TVar)] -> Bool
+isBound _ [] = False
+isBound var b@(l:r) | fst(l) == var = True
+                        | otherwise = isBound var r
 
 instance Eq Type where
   t1 == t2 = alphaEquiv t1 t2 []
@@ -230,5 +251,24 @@ desugar (SpecE expr tys) =
    (ty:tys) -> desugar (SpecE (SpecE expr [ty]) tys)
 
 -- Problem 6.
+{-
+data DExpr = NumD Integer
+           | StringD String
+           | IfD DExpr DExpr DExpr
+           | VarD Var
+           | FunD Var Type DExpr
+           | AppD DExpr DExpr
+           | WithD Var DExpr DExpr
+           | ForAllD Var DExpr
+           | SpecD DExpr Type
+-}
 erase :: DExpr -> CExpr
-erase _ = VarC "implement me!"
+erase (NumD i) = NumC i
+erase (StringD s) = StringC s
+erase (IfD cond cons alt) = IfC (erase cond) (erase cons) (erase alt)
+erase (VarD v) = VarC v
+erase (FunD v t d) = FunC v (erase d)
+erase (AppD d1 d2) = AppC (erase d1) (erase d2)
+erase (WithD v d1 d2) = AppC (FunC v (erase d1)) (erase d2)
+erase (ForAllD v d) = erase d
+erase (SpecD d t) = erase d
