@@ -59,11 +59,29 @@ subst var forType inType = inType
 
 -- Problem 5.
 checkType :: DExpr -> TyContext -> Result Type
-checkType (VarD v) (bt, pt) = case lookup v pt of
-                                Just t -> return t
-                                _ -> fail ("can't do it" ++ v)
-checkType (FunD v t dexpr) (bt, pt) = checkType dexpr (v:bt, (v, t):pt) >>= (\dexpr' -> Ok(ArrowT t dexpr'))
 checkType (NumD _) _ = Ok NumT
+checkType (StringD _) _ = return StringT
+checkType (IfD cond cons alt) gamma = checkType cond gamma >>= (\tyCond ->
+                                        case tyCond of 
+                                          BoolT -> checkType cons gamma >>= (\tyCons ->
+                                            checkType alt gamma >>= (\tyAlt -> 
+                                              if doTypesMatch tyAlt tyCons
+                                                then return tyAlt
+                                                else fail "cons and alt don't return same type"))
+                                          _ -> fail "IfD cons did not type to bool"
+                                          )
+-- Return the type of the variable
+-- Only if it's closde in the bound types
+checkType (VarD v) (bt, pt) = case lookup v pt of
+                                Just t -> case checkClosed t bt of 
+                                            Ok(_) -> return t
+                                            _ -> fail (show t ++ " is not closed")
+                                _ -> fail ("Don't know what " ++ show v ++ " is")
+-- Return an ArrowT from t to the type of dexpr
+checkType (FunD v t dexpr) (bt, pt) = checkType dexpr (v:bt, (v, t):pt) >>= (\dexpr' -> 
+                                        return (ArrowT t dexpr')
+                                      )
+-- Assert that the input of d1 matches d2
 checkType (AppD d1 d2) gamma = checkType d1 gamma >>= (\tyd1 -> 
                                  case tyd1 of
                                    ArrowT t1 t2 -> 
@@ -72,7 +90,11 @@ checkType (AppD d1 d2) gamma = checkType d1 gamma >>= (\tyd1 ->
                                         then return t2
                                         else fail "types' dont match" 
                                     )
+                                   _ -> "An AppD must have an ArrowT as it's initial dexpr"
                                 )
+checkType (WithD v d1 d2) gamma =  fail (show d1 ++ show d2)
+checkType (ForAllD v d) gamma =  fail (show d1 ++ show d2)
+checkType (SpecD d t) gamma =  fail (show d1 ++ show d2)
 checkType expr gamma = Err "implement me!"
 
 
