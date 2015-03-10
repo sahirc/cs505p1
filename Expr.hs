@@ -30,7 +30,7 @@ data Type = NumT
 alphaEquiv :: Type -> Type -> [(TVar, TVar)] -> Bool
 
 -- Free type variables are compared for simple equality.
-alphaEquiv (VarT t1) (VarT t2) bound  | elem (t1, t2) bound = True
+alphaEquiv (VarT t1) (VarT t2) bound  | elem (t1, t2) bound && elem (t2, t1) bound = True
                                       | otherwise = if t1 == t2 
                                                       then 
                                                         not(isBound t1 bound)
