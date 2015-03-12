@@ -100,9 +100,11 @@ checkType (AppD d1 d2) gamma = checkType d1 gamma >>= (\tyd1 ->
                                 )
 checkType (ForAllD v d) (bt,pt) =  checkType d (v:bt, pt) >>= (\ty -> return (ForAllT v ty))
 checkType (WithD v d1 d2) gamma@(bt, pt) =  checkType d1 gamma >>= (\tyd1 -> checkType d2 (v:bt, (v, tyd1):pt) )
-checkType (SpecD d t) gamma = checkType d gamma >>= (\tyd -> 
+checkType (SpecD d t) gamma@(bt, pt) = checkType d gamma >>= (\tyd -> 
                                 case tyd of  
-                                  ForAllT v ty -> return (subst v t ty)
+                                  ForAllT v ty -> case checkClosed t bt of
+												    Ok(_) -> return (subst v t ty)
+												    _ -> fail (show t ++ " is not closed in " ++ show bt)												 
                                   _ -> fail "Spec can only be applied to a ForAll"
                               )
 doTypesMatch :: Type -> Type -> Bool

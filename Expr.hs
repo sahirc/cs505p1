@@ -24,30 +24,44 @@ data Type = NumT
           | ForAllT TVar Type
           | VarT TVar
 
+		  
 -- alphaEquiv determines whether two types are equivalent up to alpha
 -- renaming of type variables.
 -- Problem 1.
 alphaEquiv :: Type -> Type -> [(TVar, TVar)] -> Bool
 
 -- Free type variables are compared for simple equality.
-alphaEquiv (VarT t1) (VarT t2) bound  | elem (t1, t2) bound && elem (t2, t1) bound = True
-                                      | otherwise = if t1 == t2 
-                                                      then 
-                                                        not(isBound t1 bound)
-                                                      else
-                                                        False
-
+alphaEquiv (VarT t1) (VarT t2) bound = case getFst t1 bound of
+                                         Ok(t1p) -> case getSnd t2 bound of 
+										              Err _ -> if t1 == t2 
+													             then not(isBound t1 bound)
+													             else False                                                      
+										              Ok(t2p) -> if (t1p == t2 && t2p == t1)
+													               then True
+																   else False
+                                         Err _ -> if t1 == t2 
+													then not(isBound t1 bound)
+													else False                                                      
+													
 alphaEquiv (ForAllT v1 t1) (ForAllT v2 t2) bound = alphaEquiv t1 t2 ((v1, v2):bound)
 alphaEquiv (ArrowT t1 t2)  (ArrowT t3 t4)  bound = alphaEquiv t1 t3 bound && alphaEquiv t2 t4 bound
 alphaEquiv (PairT t1 t2)   (PairT t3 t4)   bound = alphaEquiv t1 t3 bound && alphaEquiv t2 t4 bound
 alphaEquiv (ListT t1)      (ListT t2)      bound = alphaEquiv t1 t2 bound
 
-
 alphaEquiv NumT NumT _ = True
 alphaEquiv BoolT BoolT _ = True
 alphaEquiv StringT StringT _ = True
 alphaEquiv _ _ _ = False
-
+										
+getFst :: TVar -> [(TVar, TVar)] -> Result TVar
+getFst k [] = fail ("no binding found for " ++ show k)
+getFst key ((ba, bb):bs) | key == ba = return bb
+						  | otherwise = getFst key bs
+						  
+getSnd :: TVar -> [(TVar, TVar)] -> Result TVar
+getSnd k [] = fail ("no binding found for " ++ show k)
+getSnd key ((ba, bb):bs) | key == bb = return ba
+						  | otherwise = getSnd key bs						  
 
 isBound :: TVar -> [(TVar, TVar)] -> Bool
 isBound _ [] = False
